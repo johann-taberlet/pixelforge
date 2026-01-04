@@ -37,7 +37,7 @@ class FloodFill {
   }) {
     if (!buffer.contains(start.x, start.y)) return [];
 
-    final targetColor = buffer.getPixel(start.x, start.y);
+    final targetColor = buffer.getPixelRaw(start.x, start.y);
     if (targetColor == fillColor) return [];
 
     final filler = FloodFill._(
@@ -66,7 +66,7 @@ class FloodFill {
 
       // Fill this span
       for (var x = span.left; x <= span.right; x++) {
-        _buffer.setPixel(x, span.y, _fillColor);
+        _buffer.setPixelRaw(x, span.y, _fillColor);
         filled.add(Point(x, span.y));
       }
 
@@ -133,7 +133,7 @@ class FloodFill {
 
   /// Checks if a pixel matches the target color within tolerance.
   bool _matchesTarget(int x, int y) {
-    final color = _buffer.getPixel(x, y);
+    final color = _buffer.getPixelRaw(x, y);
     if (_tolerance == 0) return color == _targetColor;
     return _colorDifference(color, _targetColor) <= _tolerance;
   }

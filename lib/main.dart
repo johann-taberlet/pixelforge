@@ -1,19 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import 'state/editor_state.dart';
+import 'ui/screens/editor_screen.dart';
 
 void main() {
-  runApp(const MainApp());
+  runApp(const PixelForgeApp());
 }
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
+class PixelForgeApp extends StatelessWidget {
+  const PixelForgeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(
-        body: Center(
-          child: Text('Hello World!'),
+    return ChangeNotifierProvider(
+      create: (_) => EditorState(),
+      child: MaterialApp(
+        title: 'PixelForge',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData.dark().copyWith(
+          scaffoldBackgroundColor: const Color(0xFF1E1E1E),
+          dividerColor: const Color(0xFF3C3C3C),
         ),
+        home: const EditorScreen(),
       ),
     );
   }
