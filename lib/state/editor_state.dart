@@ -119,4 +119,99 @@ class EditorState extends ChangeNotifier {
     _sprite!.addLayer();
     notifyListeners();
   }
+
+  /// Toggles lock state of a layer by index.
+  void toggleLayerLock(int index) {
+    if (_sprite == null) return;
+    if (index < 0 || index >= _sprite!.layers.length) return;
+    _sprite!.layers[index].locked = !_sprite!.layers[index].locked;
+    notifyListeners();
+  }
+
+  /// Sets the opacity of a layer by index.
+  void setLayerOpacity(int index, double opacity) {
+    if (_sprite == null) return;
+    if (index < 0 || index >= _sprite!.layers.length) return;
+    _sprite!.layers[index].opacity = opacity.clamp(0.0, 1.0);
+    notifyListeners();
+  }
+
+  /// Sets the blend mode of a layer by index.
+  void setLayerBlendMode(int index, BlendMode mode) {
+    if (_sprite == null) return;
+    if (index < 0 || index >= _sprite!.layers.length) return;
+    _sprite!.layers[index].blendMode = mode;
+    notifyListeners();
+  }
+
+  /// Reorders a layer from oldIndex to newIndex.
+  void reorderLayer(int oldIndex, int newIndex) {
+    if (_sprite == null) return;
+    final layers = _sprite!.layers;
+    if (oldIndex < 0 || oldIndex >= layers.length) return;
+    if (newIndex < 0 || newIndex >= layers.length) return;
+    if (oldIndex == newIndex) return;
+
+    final layer = layers.removeAt(oldIndex);
+    layers.insert(newIndex, layer);
+
+    // Update current selection if needed
+    if (_currentLayerIndex == oldIndex) {
+      _currentLayerIndex = newIndex;
+    } else if (oldIndex < _currentLayerIndex && newIndex >= _currentLayerIndex) {
+      _currentLayerIndex--;
+    } else if (oldIndex > _currentLayerIndex && newIndex <= _currentLayerIndex) {
+      _currentLayerIndex++;
+    }
+
+    notifyListeners();
+  }
+
+  /// Duplicates the current layer.
+  void duplicateCurrentLayer() {
+    if (_sprite == null) return;
+    if (_currentLayerIndex < 0 || _currentLayerIndex >= _sprite!.layers.length) {
+      return;
+    }
+
+    final current = _sprite!.layers[_currentLayerIndex];
+    final copy = current.copyWith(
+      id: 'layer_${DateTime.now().microsecondsSinceEpoch}',
+      name: '${current.name} copy',
+      locked: false,
+    );
+
+    _sprite!.layers.insert(_currentLayerIndex + 1, copy);
+    _currentLayerIndex++;
+    notifyListeners();
+  }
+
+  /// Deletes the current layer.
+  void deleteCurrentLayer() {
+    if (_sprite == null) return;
+    if (_sprite!.layers.length <= 1) return; // Keep at least one layer
+    if (_currentLayerIndex < 0 || _currentLayerIndex >= _sprite!.layers.length) {
+      return;
+    }
+
+    _sprite!.layers.removeAt(_currentLayerIndex);
+    if (_currentLayerIndex >= _sprite!.layers.length) {
+      _currentLayerIndex = _sprite!.layers.length - 1;
+    }
+    notifyListeners();
+  }
+
+  /// Moves current layer up in the stack.
+  void moveCurrentLayerUp() {
+    if (_sprite == null) return;
+    if (_currentLayerIndex >= _sprite!.layers.length - 1) return;
+    reorderLayer(_currentLayerIndex, _currentLayerIndex + 1);
+  }
+
+  /// Moves current layer down in the stack.
+  void moveCurrentLayerDown() {
+    if (_sprite == null) return;
+    if (_currentLayerIndex <= 0) return;
+    reorderLayer(_currentLayerIndex, _currentLayerIndex - 1);
+  }
 }
