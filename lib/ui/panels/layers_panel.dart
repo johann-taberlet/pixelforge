@@ -147,7 +147,7 @@ class _LayerTile extends StatefulWidget {
   final VoidCallback onVisibilityToggle;
   final VoidCallback onLockToggle;
   final ValueChanged<double> onOpacityChange;
-  final ValueChanged<doc.BlendMode> onBlendModeChange;
+  final ValueChanged<doc.LayerBlendMode> onBlendModeChange;
 
   const _LayerTile({
     required super.key,
@@ -321,7 +321,7 @@ class _LayerTileState extends State<_LayerTile> {
                     color: Colors.white10,
                     borderRadius: BorderRadius.circular(4),
                   ),
-                  child: DropdownButton<doc.BlendMode>(
+                  child: DropdownButton<doc.LayerBlendMode>(
                     value: widget.layer.blendMode,
                     isExpanded: true,
                     dropdownColor: const Color(0xFF333333),
@@ -332,7 +332,7 @@ class _LayerTileState extends State<_LayerTile> {
                       color: Colors.white54,
                       size: 18,
                     ),
-                    items: doc.BlendMode.values.map((mode) {
+                    items: doc.LayerBlendMode.values.map((mode) {
                       return DropdownMenuItem(
                         value: mode,
                         child: Text(_blendModeLabel(mode)),
@@ -353,36 +353,40 @@ class _LayerTileState extends State<_LayerTile> {
     );
   }
 
-  String _blendModeLabel(doc.BlendMode mode) {
+  String _blendModeLabel(doc.LayerBlendMode mode) {
     switch (mode) {
-      case doc.BlendMode.normal:
+      case doc.LayerBlendMode.normal:
         return 'Normal';
-      case doc.BlendMode.multiply:
+      case doc.LayerBlendMode.multiply:
         return 'Multiply';
-      case doc.BlendMode.screen:
+      case doc.LayerBlendMode.screen:
         return 'Screen';
-      case doc.BlendMode.overlay:
+      case doc.LayerBlendMode.overlay:
         return 'Overlay';
-      case doc.BlendMode.darken:
+      case doc.LayerBlendMode.darken:
         return 'Darken';
-      case doc.BlendMode.lighten:
+      case doc.LayerBlendMode.lighten:
         return 'Lighten';
-      case doc.BlendMode.colorDodge:
+      case doc.LayerBlendMode.colorDodge:
         return 'Color Dodge';
-      case doc.BlendMode.colorBurn:
+      case doc.LayerBlendMode.colorBurn:
         return 'Color Burn';
-      case doc.BlendMode.hardLight:
+      case doc.LayerBlendMode.hardLight:
         return 'Hard Light';
-      case doc.BlendMode.softLight:
+      case doc.LayerBlendMode.softLight:
         return 'Soft Light';
-      case doc.BlendMode.difference:
+      case doc.LayerBlendMode.difference:
         return 'Difference';
-      case doc.BlendMode.exclusion:
+      case doc.LayerBlendMode.exclusion:
         return 'Exclusion';
-      case doc.BlendMode.add:
-        return 'Add';
-      case doc.BlendMode.subtract:
-        return 'Subtract';
+      case doc.LayerBlendMode.hue:
+        return 'Hue';
+      case doc.LayerBlendMode.saturation:
+        return 'Saturation';
+      case doc.LayerBlendMode.color:
+        return 'Color';
+      case doc.LayerBlendMode.luminosity:
+        return 'Luminosity';
     }
   }
 }
