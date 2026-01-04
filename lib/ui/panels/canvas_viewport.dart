@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/document/pixel_buffer.dart';
@@ -33,6 +35,12 @@ class _CanvasViewportState extends State<CanvasViewport> {
 
   /// Input controller for pointer event handling.
   late InputController _inputController;
+
+  /// Whether space key is held (for pan mode).
+  bool _spaceHeld = false;
+
+  /// Focus node for keyboard input.
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
@@ -80,48 +88,81 @@ class _CanvasViewportState extends State<CanvasViewport> {
 
   @override
   void dispose() {
+    _focusNode.dispose();
     _transform.dispose();
     super.dispose();
   }
 
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent) {
+      // Scroll wheel zoom
+      final zoomFactor = event.scrollDelta.dy > 0 ? 0.9 : 1.1;
+      _transform.zoomBy(zoomFactor, focalPoint: event.localPosition);
+    }
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event.logicalKey == LogicalKeyboardKey.space) {
+      if (event is KeyDownEvent) {
+        setState(() => _spaceHeld = true);
+        return KeyEventResult.handled;
+      } else if (event is KeyUpEvent) {
+        setState(() => _spaceHeld = false);
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Consumer<EditorState>(
-      builder: (context, state, _) {
-        final sprite = state.sprite;
+    return Focus(
+      focusNode: _focusNode,
+      onKeyEvent: _handleKeyEvent,
+      autofocus: true,
+      child: Listener(
+        onPointerSignal: _handlePointerSignal,
+        child: Consumer<EditorState>(
+          builder: (context, state, _) {
+            final sprite = state.sprite;
 
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            // Update viewport size for transform calculations
-            _transform.setViewportSize(
-              Size(constraints.maxWidth, constraints.maxHeight),
-            );
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                // Update viewport size for transform calculations
+                _transform.setViewportSize(
+                  Size(constraints.maxWidth, constraints.maxHeight),
+                );
 
-            if (sprite != null) {
-              _transform.setCanvasSize(
-                Size(sprite.width.toDouble(), sprite.height.toDouble()),
-              );
-            }
+                if (sprite != null) {
+                  _transform.setCanvasSize(
+                    Size(sprite.width.toDouble(), sprite.height.toDouble()),
+                  );
+                }
 
-            return GestureDetector(
-              // Handle pan/zoom gestures (separate from drawing input)
-              onScaleStart: _onScaleStart,
-              onScaleUpdate: _onScaleUpdate,
-              child: Container(
-                color: const Color(0xFF1E1E1E),
-                child: Center(
-                  child: sprite == null
-                      ? const Text(
-                          'No sprite loaded',
-                          style: TextStyle(color: Colors.white38),
-                        )
-                      : _buildCanvasWithInput(state, sprite),
-                ),
-              ),
+                return GestureDetector(
+                  // Handle pan/zoom gestures (separate from drawing input)
+                  onScaleStart: _onScaleStart,
+                  onScaleUpdate: _onScaleUpdate,
+                  child: MouseRegion(
+                    cursor: _spaceHeld ? SystemMouseCursors.grab : SystemMouseCursors.precise,
+                    child: Container(
+                      color: const Color(0xFF1E1E1E),
+                      child: Center(
+                        child: sprite == null
+                            ? const Text(
+                                'No sprite loaded',
+                                style: TextStyle(color: Colors.white38),
+                              )
+                            : _buildCanvasWithInput(state, sprite),
+                      ),
+                    ),
+                  ),
+                );
+              },
             );
           },
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -141,7 +182,6 @@ class _CanvasViewportState extends State<CanvasViewport> {
           child: _inputController.buildInputLayer(
             child: PixelCanvas(
               buffer: buffer,
-              transform: Matrix4.identity(), // Transform handled by parent
               showCheckerboard: true,
               checkerboardSize: 8,
             ),
@@ -159,11 +199,13 @@ class _CanvasViewportState extends State<CanvasViewport> {
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
-    // Only handle pan/zoom with 2+ pointers to not interfere with drawing
-    if (details.pointerCount < 2) return;
+    // Allow pan with single pointer when space is held, or with 2+ pointers
+    final allowPan = _spaceHeld || details.pointerCount >= 2;
 
-    if (details.scale != 1.0) {
-      // Zoom
+    if (!allowPan && details.pointerCount < 2) return;
+
+    if (details.scale != 1.0 && details.pointerCount >= 2) {
+      // Zoom with pinch gesture
       _transform.zoomBy(details.scale, focalPoint: details.localFocalPoint);
     } else if (_lastFocalPoint != null) {
       // Pan

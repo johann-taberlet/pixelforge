@@ -105,8 +105,13 @@ class RenderPixelCanvas extends RenderBox {
   }
 
   @override
-  void performLayout() {
+  void performResize() {
     size = constraints.biggest;
+  }
+
+  @override
+  void performLayout() {
+    // Size is set in performResize when sizedByParent is true
   }
 
   @override
