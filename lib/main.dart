@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'state/editor_state.dart';
+import 'tools/tool.dart';
 import 'ui/screens/editor_screen.dart';
 
 void main() {
@@ -13,8 +14,11 @@ class PixelForgeApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => EditorState(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => EditorState()),
+        ChangeNotifierProvider(create: (_) => ToolController()),
+      ],
       child: MaterialApp(
         title: 'PixelForge',
         debugShowCheckedModeBanner: false,
