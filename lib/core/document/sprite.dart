@@ -59,7 +59,7 @@ class Sprite {
   Layer getLayer(int index) => _layers[index];
 
   /// Gets a layer by ID, or null if not found.
-  Layer? getLayerById(String id) {
+  Layer? getLayerById(int id) {
     try {
       return _layers.firstWhere((l) => l.id == id);
     } catch (_) {
