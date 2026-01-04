@@ -63,39 +63,64 @@ class LayersPanel extends StatelessWidget {
             ),
           ),
           // Footer buttons
-          Container(
-            padding: const EdgeInsets.all(4),
-            color: const Color(0xFF333333),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(
-                  child: IconButton(
-                    icon: const Icon(Icons.add, size: 18),
-                    color: Colors.white70,
-                    tooltip: 'Add layer',
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    padding: EdgeInsets.zero,
-                    onPressed: () => context.read<EditorState>().addLayer(),
-                  ),
-                ),
-                Flexible(
-                  child: IconButton(
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    color: Colors.white70,
-                    tooltip: 'Delete layer',
-                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                    padding: EdgeInsets.zero,
-                    onPressed: () {
-                      // TODO: Implement layer deletion
-                    },
-                  ),
-                ),
-              ],
-            ),
+          _buildFooter(context),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      color: const Color(0xFF333333),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _footerButton(
+            icon: Icons.add,
+            tooltip: 'Add layer',
+            onPressed: () => context.read<EditorState>().addLayer(),
+          ),
+          _footerButton(
+            icon: Icons.copy,
+            tooltip: 'Duplicate layer',
+            onPressed: () => context.read<EditorState>().duplicateCurrentLayer(),
+          ),
+          _footerButton(
+            icon: Icons.delete_outline,
+            tooltip: 'Delete layer',
+            onPressed: () => context.read<EditorState>().deleteCurrentLayer(),
+          ),
+          _footerButton(
+            icon: Icons.arrow_upward,
+            tooltip: 'Move layer up',
+            onPressed: () => context.read<EditorState>().moveCurrentLayerUp(),
+          ),
+          _footerButton(
+            icon: Icons.arrow_downward,
+            tooltip: 'Move layer down',
+            onPressed: () => context.read<EditorState>().moveCurrentLayerDown(),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _footerButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) {
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        icon: Icon(icon, size: 18),
+        color: Colors.white70,
+        tooltip: tooltip,
+        onPressed: onPressed,
       ),
     );
   }
