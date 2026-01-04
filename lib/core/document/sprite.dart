@@ -68,14 +68,16 @@ class Sprite {
   }
 
   /// Gets the index of a layer by ID, or -1 if not found.
-  int getLayerIndex(String id) => _layers.indexWhere((l) => l.id == id);
+  int getLayerIndex(int id) => _layers.indexWhere((l) => l.id == id);
 
   /// Adds a new layer at the top of the stack.
   Layer addLayer({String? name}) {
-    final id = _generateId();
+    final id = _generateLayerId();
     final layer = Layer(
       id: id,
       name: name ?? 'Layer ${_layers.length + 1}',
+      width: width,
+      height: height,
     );
     _layers.add(layer);
     return layer;
@@ -87,14 +89,15 @@ class Sprite {
   }
 
   /// Removes a layer and all its cels.
-  bool removeLayer(String id) {
+  bool removeLayer(int id) {
     final index = getLayerIndex(id);
     if (index == -1) return false;
 
     _layers.removeAt(index);
 
     // Remove all cels for this layer
-    _cels.removeWhere((key, cel) => cel.layerId == id);
+    final layerIdStr = id.toString();
+    _cels.removeWhere((key, cel) => cel.layerId == layerIdStr);
     return true;
   }
 
@@ -130,7 +133,7 @@ class Sprite {
 
   /// Adds a new frame at the end.
   Frame addFrame({int? durationMs}) {
-    final id = _generateId();
+    final id = _generateFrameId();
     final frame = Frame(
       id: id,
       durationMs: durationMs ?? defaultFrameDurationMs,
@@ -179,7 +182,7 @@ class Sprite {
   Cel? getCelAt(int layerIndex, int frameIndex) {
     if (layerIndex < 0 || layerIndex >= _layers.length) return null;
     if (frameIndex < 0 || frameIndex >= _frames.length) return null;
-    return getCel(_layers[layerIndex].id, _frames[frameIndex].id);
+    return getCel(_layers[layerIndex].id.toString(), _frames[frameIndex].id);
   }
 
   /// Sets a cel at the layer/frame intersection.
@@ -223,7 +226,11 @@ class Sprite {
 
   int _idCounter = 0;
 
-  String _generateId() {
+  int _generateLayerId() {
+    return _idCounter++;
+  }
+
+  String _generateFrameId() {
     return '${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
   }
 

@@ -137,7 +137,7 @@ class EditorState extends ChangeNotifier {
   }
 
   /// Sets the blend mode of a layer by index.
-  void setLayerBlendMode(int index, BlendMode mode) {
+  void setLayerBlendMode(int index, LayerBlendMode mode) {
     if (_sprite == null) return;
     if (index < 0 || index >= _sprite!.layers.length) return;
     _sprite!.layers[index].blendMode = mode;
@@ -176,7 +176,7 @@ class EditorState extends ChangeNotifier {
 
     final current = _sprite!.layers[_currentLayerIndex];
     final copy = current.copyWith(
-      id: 'layer_${DateTime.now().microsecondsSinceEpoch}',
+      id: DateTime.now().microsecondsSinceEpoch,
       name: '${current.name} copy',
       locked: false,
     );

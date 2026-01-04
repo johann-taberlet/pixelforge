@@ -282,15 +282,26 @@ class PixelDiffCommand extends Command {
   String get description => _description;
 
   @override
+  String get type => 'pixel_diff';
+
   int get memoryBytes => diff.memoryBytes;
 
   @override
-  void execute() {
+  Future<bool> execute() async {
     diff.apply(getBuffer(diff.layerId));
+    return true;
   }
 
   @override
-  void undo() {
+  Future<bool> undo() async {
     diff.unapply(getBuffer(diff.layerId));
+    return true;
   }
+
+  @override
+  Map<String, dynamic> toJson() => {
+    'type': type,
+    'description': description,
+    'layerId': diff.layerId,
+  };
 }

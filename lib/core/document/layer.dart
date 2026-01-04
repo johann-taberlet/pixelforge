@@ -140,6 +140,31 @@ class Layer {
     Uint8List? pixelData,
   }) : _pixelData = pixelData;
 
+  /// Create a copy of this layer with optional field overrides.
+  Layer copyWith({
+    int? id,
+    String? name,
+    int? width,
+    int? height,
+    bool? visible,
+    bool? locked,
+    double? opacity,
+    LayerBlendMode? blendMode,
+    Uint8List? pixelData,
+  }) {
+    return Layer(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      width: width ?? this.width,
+      height: height ?? this.height,
+      visible: visible ?? this.visible,
+      locked: locked ?? this.locked,
+      opacity: opacity ?? this.opacity,
+      blendMode: blendMode ?? this.blendMode,
+      pixelData: pixelData ?? (_pixelData != null ? Uint8List.fromList(_pixelData!) : null),
+    );
+  }
+
   /// Get the raw pixel data, creating it if needed.
   Uint8List get pixelData {
     _pixelData ??= Uint8List(width * height * 4);
