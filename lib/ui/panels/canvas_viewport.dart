@@ -1,19 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/document/pixel_buffer.dart';
 import '../../input/gesture_coalescer.dart';
 import '../../input/input_controller.dart';
 import '../../rendering/canvas_transform.dart';
+import '../../rendering/canvas_widget.dart';
 import '../../state/editor_state.dart';
 import '../../tools/tool.dart';
 
-/// Canvas viewport with pan/zoom, input handling, and checkerboard background.
+/// Canvas viewport with pan/zoom, input handling, and GPU-accelerated rendering.
 ///
 /// Connects the input system to tools:
 /// 1. Wraps canvas with InputController for pointer event capture
 /// 2. Routes events through GestureCoalescer for frame-synchronized delivery
 /// 3. Transforms screen coordinates to canvas pixel coordinates
 /// 4. Dispatches coalesced events to the active tool
+/// 5. Renders using PixelCanvas for GPU-accelerated display
 class CanvasViewport extends StatefulWidget {
   const CanvasViewport({super.key});
 
@@ -112,7 +115,7 @@ class _CanvasViewportState extends State<CanvasViewport> {
                           'No sprite loaded',
                           style: TextStyle(color: Colors.white38),
                         )
-                      : _buildCanvasWithInput(sprite.width, sprite.height),
+                      : _buildCanvasWithInput(state, sprite),
                 ),
               ),
             );
@@ -122,7 +125,13 @@ class _CanvasViewportState extends State<CanvasViewport> {
     );
   }
 
-  Widget _buildCanvasWithInput(int width, int height) {
+  Widget _buildCanvasWithInput(EditorState state, dynamic sprite) {
+    // Get the current cel's pixel buffer
+    final cel = sprite.getCelAt(state.currentLayerIndex, state.currentFrameIndex);
+
+    // If no cel exists, use empty buffer
+    final buffer = cel?.buffer ?? PixelBuffer(sprite.width as int, sprite.height as int);
+
     return ListenableBuilder(
       listenable: _transform,
       builder: (context, _) {
@@ -130,9 +139,11 @@ class _CanvasViewportState extends State<CanvasViewport> {
           transform: _transform.matrix,
           alignment: Alignment.topLeft,
           child: _inputController.buildInputLayer(
-            child: _CanvasPlaceholder(
-              width: width,
-              height: height,
+            child: PixelCanvas(
+              buffer: buffer,
+              transform: Matrix4.identity(), // Transform handled by parent
+              showCheckerboard: true,
+              checkerboardSize: 8,
             ),
           ),
         );
@@ -162,64 +173,4 @@ class _CanvasViewportState extends State<CanvasViewport> {
 
     _lastFocalPoint = details.localFocalPoint;
   }
-}
-
-/// Placeholder canvas showing a checkerboard pattern.
-///
-/// Will be replaced with PixelCanvas once GPU renderer is integrated.
-class _CanvasPlaceholder extends StatelessWidget {
-  final int width;
-  final int height;
-
-  const _CanvasPlaceholder({
-    required this.width,
-    required this.height,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width.toDouble(),
-      height: height.toDouble(),
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.white24),
-      ),
-      child: CustomPaint(
-        painter: _CheckerboardPainter(),
-        size: Size(width.toDouble(), height.toDouble()),
-      ),
-    );
-  }
-}
-
-/// Paints a checkerboard pattern for transparency visualization.
-class _CheckerboardPainter extends CustomPainter {
-  static const _lightColor = Color(0xFFCCCCCC);
-  static const _darkColor = Color(0xFF999999);
-  static const _tileSize = 8.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final lightPaint = Paint()..color = _lightColor;
-    final darkPaint = Paint()..color = _darkColor;
-
-    final cols = (size.width / _tileSize).ceil();
-    final rows = (size.height / _tileSize).ceil();
-
-    for (var row = 0; row < rows; row++) {
-      for (var col = 0; col < cols; col++) {
-        final isLight = (row + col) % 2 == 0;
-        final rect = Rect.fromLTWH(
-          col * _tileSize,
-          row * _tileSize,
-          _tileSize,
-          _tileSize,
-        );
-        canvas.drawRect(rect, isLight ? lightPaint : darkPaint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
