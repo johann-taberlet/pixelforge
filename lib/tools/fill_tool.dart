@@ -1,7 +1,9 @@
+import 'dart:ui';
+
 import '../core/document/pixel_buffer.dart';
 import '../core/geometry/flood_fill.dart';
 import '../core/geometry/point.dart';
-import 'tool.dart';
+import '../input/input_controller.dart';
 
 /// Fill bucket tool for flood filling connected regions.
 ///
@@ -9,151 +11,117 @@ import 'tool.dart';
 /// - Scanline flood fill algorithm for efficient filling
 /// - Color tolerance for filling similar colors
 /// - Contiguous mode (fill connected pixels) vs global mode (fill all matching)
-class FillTool extends Tool with ToleranceTool, FillModeTool {
+class FillTool {
+  /// Fill color.
+  Color color;
+
+  /// Color tolerance for matching (0-255).
+  int tolerance;
+
+  /// Whether to fill only contiguous pixels.
+  bool contiguous;
+
+  /// Callback when pixels should be filled.
+  final void Function(List<Point> pixels, int fillColor)? onFill;
+
+  /// Access to the pixel buffer for reading colors.
+  final PixelBuffer Function()? getBuffer;
+
+  /// Current tool state.
   ToolState _state = ToolState.idle;
 
-  @override
-  int tolerance = 0;
+  FillTool({
+    this.color = const Color(0xFF000000),
+    this.tolerance = 0,
+    this.contiguous = true,
+    this.onFill,
+    this.getBuffer,
+  });
 
-  @override
-  bool contiguous = true;
-
-  @override
-  String get id => 'fill';
-
-  @override
-  String get name => 'Fill';
-
-  @override
+  /// Current tool state.
   ToolState get state => _state;
 
-  @override
-  void onStart(Point position, ToolContext context) {
+  /// Handle input event from InputController.
+  void handleInput(CanvasInputEvent event) {
+    switch (event.type) {
+      case InputEventType.down:
+        onStart(event.point);
+      case InputEventType.move:
+      case InputEventType.up:
+      case InputEventType.cancel:
+      case InputEventType.hover:
+        // Fill tool only acts on down
+        break;
+    }
+  }
+
+  /// Perform fill on click.
+  void onStart(CanvasPoint point) {
     _state = ToolState.active;
 
-    // Perform the fill immediately on click
-    _performFill(position, context);
-
-    _state = ToolState.idle;
-  }
-
-  @override
-  void onUpdate(Point position, ToolContext context) {
-    // Fill tool doesn't track movement
-  }
-
-  @override
-  void onEnd(Point position, ToolContext context) {
-    _state = ToolState.idle;
-  }
-
-  @override
-  void onCancel(ToolContext context) {
-    _state = ToolState.idle;
-  }
-
-  /// Performs the fill operation.
-  void _performFill(Point position, ToolContext context) {
-    final x = position.x;
-    final y = position.y;
-
-    // Bounds check
-    if (x < 0 || x >= context.canvasWidth ||
-        y < 0 || y >= context.canvasHeight) {
+    final buffer = getBuffer?.call();
+    if (buffer == null) {
+      _state = ToolState.idle;
       return;
     }
 
-    final targetColor = context.getPixel(x, y);
-    final fillColor = context.foregroundColor;
+    final x = point.x.round();
+    final y = point.y.round();
+
+    // Bounds check
+    if (!buffer.contains(x, y)) {
+      _state = ToolState.idle;
+      return;
+    }
+
+    final fillColor = _colorToInt(color);
+    final targetColor = buffer.getPixelRaw(x, y);
 
     // Don't fill if colors are the same
     if (_colorsMatch(targetColor, fillColor, 0)) {
+      _state = ToolState.idle;
       return;
     }
 
+    List<Point> filled;
     if (contiguous) {
-      _fillContiguous(position, targetColor, fillColor, context);
+      filled = FloodFill.fill(
+        buffer: buffer,
+        start: Point(x, y),
+        fillColor: fillColor,
+        tolerance: tolerance,
+      );
     } else {
-      _fillGlobal(targetColor, fillColor, context);
+      filled = _fillGlobal(buffer, targetColor, fillColor);
     }
 
-    context.commit('Fill');
-  }
-
-  /// Fills contiguous pixels using scanline flood fill.
-  void _fillContiguous(
-    Point start,
-    int targetColor,
-    int fillColor,
-    ToolContext context,
-  ) {
-    // Create a temporary buffer to work with
-    final buffer = PixelBuffer(context.canvasWidth, context.canvasHeight);
-
-    // Copy current canvas state to buffer
-    for (var y = 0; y < context.canvasHeight; y++) {
-      for (var x = 0; x < context.canvasWidth; x++) {
-        buffer.setPixelRaw(x, y, context.getPixel(x, y));
-      }
-    }
-
-    // Perform flood fill
-    final filled = FloodFill.fill(
-      buffer: buffer,
-      start: start,
-      fillColor: fillColor,
-      tolerance: tolerance,
-    );
-
-    // Apply filled pixels back to context
-    var minX = context.canvasWidth;
-    var minY = context.canvasHeight;
-    var maxX = 0;
-    var maxY = 0;
-
-    for (final point in filled) {
-      context.setPixel(point.x, point.y, fillColor);
-      minX = minX < point.x ? minX : point.x;
-      minY = minY < point.y ? minY : point.y;
-      maxX = maxX > point.x ? maxX : point.x;
-      maxY = maxY > point.y ? maxY : point.y;
-    }
-
-    // Mark dirty region
     if (filled.isNotEmpty) {
-      context.markDirty(minX, minY, maxX - minX + 1, maxY - minY + 1);
+      onFill?.call(filled, fillColor);
     }
+
+    _state = ToolState.idle;
   }
 
   /// Fills all matching pixels globally (non-contiguous).
-  void _fillGlobal(
-    int targetColor,
-    int fillColor,
-    ToolContext context,
-  ) {
-    var minX = context.canvasWidth;
-    var minY = context.canvasHeight;
-    var maxX = 0;
-    var maxY = 0;
-    var changed = false;
+  List<Point> _fillGlobal(PixelBuffer buffer, int targetColor, int fillColor) {
+    final filled = <Point>[];
 
-    for (var y = 0; y < context.canvasHeight; y++) {
-      for (var x = 0; x < context.canvasWidth; x++) {
-        final color = context.getPixel(x, y);
+    for (var y = 0; y < buffer.height; y++) {
+      for (var x = 0; x < buffer.width; x++) {
+        final color = buffer.getPixelRaw(x, y);
         if (_colorsMatch(color, targetColor, tolerance)) {
-          context.setPixel(x, y, fillColor);
-          minX = minX < x ? minX : x;
-          minY = minY < y ? minY : y;
-          maxX = maxX > x ? maxX : x;
-          maxY = maxY > y ? maxY : y;
-          changed = true;
+          buffer.setPixelRaw(x, y, fillColor);
+          filled.add(Point(x, y));
         }
       }
     }
 
-    if (changed) {
-      context.markDirty(minX, minY, maxX - minX + 1, maxY - minY + 1);
-    }
+    return filled;
+  }
+
+  /// Converts Color to packed int (RGBA).
+  int _colorToInt(Color c) {
+    return (c.red << 24) | (c.green << 16) | (c.blue << 8) | c.alpha;
   }
 
   /// Checks if two colors match within tolerance.
@@ -175,4 +143,10 @@ class FillTool extends Tool with ToleranceTool, FillModeTool {
         (aB - bB).abs() <= tol &&
         (aA - bA).abs() <= tol;
   }
+}
+
+/// Tool state for FillTool.
+enum ToolState {
+  idle,
+  active,
 }
