@@ -5,6 +5,18 @@ import '../core/document/document.dart';
 /// Editor state managed by Provider.
 ///
 /// Contains the active sprite, current frame/layer selection, and view state.
+/// Available tool types in the editor.
+enum ToolType {
+  pencil,
+  eraser,
+  fill,
+  colorPicker,
+  selection,
+  rectangle,
+  ellipse,
+  line,
+}
+
 class EditorState extends ChangeNotifier {
   Sprite? _sprite;
   int _currentLayerIndex = 0;
@@ -12,6 +24,7 @@ class EditorState extends ChangeNotifier {
   double _zoom = 1.0;
   double _panX = 0.0;
   double _panY = 0.0;
+  ToolType _activeTool = ToolType.pencil;
 
   /// The active sprite document.
   Sprite? get sprite => _sprite;
@@ -30,6 +43,16 @@ class EditorState extends ChangeNotifier {
 
   /// Vertical pan offset.
   double get panY => _panY;
+
+  /// Currently active tool.
+  ToolType get activeTool => _activeTool;
+
+  /// Sets the active tool.
+  void setActiveTool(ToolType tool) {
+    if (_activeTool == tool) return;
+    _activeTool = tool;
+    notifyListeners();
+  }
 
   /// Current layer (if sprite is loaded).
   Layer? get currentLayer {
