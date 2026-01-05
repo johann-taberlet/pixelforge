@@ -22,10 +22,7 @@ class RenderPixelCanvas extends RenderBox {
   /// Cached image from the pixel buffer.
   ui.Image? _cachedImage;
 
-  /// Version counter to track when cache needs invalidation.
-  int _bufferVersion = 0;
-
-  /// Last version we cached for.
+  /// Last buffer version we cached for.
   int _cachedVersion = -1;
 
   /// Paint objects reused across frames.
@@ -47,9 +44,9 @@ class RenderPixelCanvas extends RenderBox {
 
   PixelBuffer get buffer => _buffer;
   set buffer(PixelBuffer value) {
-    if (_buffer != value) {
+    final needsUpdate = _buffer != value || value.version != _cachedVersion;
+    if (needsUpdate) {
       _buffer = value;
-      _bufferVersion++;
       markNeedsPaint();
     }
   }
@@ -67,7 +64,7 @@ class RenderPixelCanvas extends RenderBox {
     if (_dirtyRect != value) {
       _dirtyRect = value;
       // Dirty rect change requires cache rebuild for that region
-      _bufferVersion++;
+      _cachedVersion = -1;
       markNeedsPaint();
     }
   }
@@ -92,7 +89,7 @@ class RenderPixelCanvas extends RenderBox {
   ///
   /// Call this when the underlying pixel data changes.
   void invalidateCache() {
-    _bufferVersion++;
+    _cachedVersion = -1;
     markNeedsPaint();
   }
 
@@ -111,7 +108,7 @@ class RenderPixelCanvas extends RenderBox {
 
   @override
   void performLayout() {
-    // Size is set in performResize when sizedByParent is true
+    // Size is set in performResize since sizedByParent is true
   }
 
   @override
@@ -131,7 +128,7 @@ class RenderPixelCanvas extends RenderBox {
     }
 
     // Rebuild cache if needed
-    if (_cachedVersion != _bufferVersion || _cachedImage == null) {
+    if (_cachedVersion != _buffer.version || _cachedImage == null) {
       _rebuildCache();
     }
 
@@ -168,7 +165,7 @@ class RenderPixelCanvas extends RenderBox {
     // For synchronous rendering, we use ImmutableBuffer + ImageDescriptor
     // which is much faster than drawing individual pixels.
     _createImageFromBuffer();
-    _cachedVersion = _bufferVersion;
+    _cachedVersion = _buffer.version;
   }
 
   void _createImageFromBuffer() {

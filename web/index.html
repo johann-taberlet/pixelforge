@@ -31,6 +31,14 @@
 
   <title>pixelforge</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Prevent browser back/forward swipe gestures */
+    html, body {
+      overscroll-behavior-x: none;
+      touch-action: none;
+    }
+  </style>
 </head>
 <body>
   <script src="gpu_renderer.js"></script>

@@ -273,6 +273,8 @@ class PixelDiffCommand extends Command {
   final PixelBuffer Function(int layerId) getBuffer;
 
   PixelDiffCommand({
+    super.id,
+    super.createdAt,
     required String description,
     required this.diff,
     required this.getBuffer,

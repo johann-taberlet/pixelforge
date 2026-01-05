@@ -1,22 +1,17 @@
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 
 import '../core/document/document.dart';
+import '../core/document/layer.dart' as doc;
+import '../core/document/pixel_buffer.dart';
+
+/// Tool types available in the editor.
+enum ToolType { pencil, eraser, fill, colorPicker, rectangle, ellipse, line }
 
 /// Editor state managed by Provider.
 ///
 /// Contains the active sprite, current frame/layer selection, and view state.
-/// Available tool types in the editor.
-enum ToolType {
-  pencil,
-  eraser,
-  fill,
-  colorPicker,
-  selection,
-  rectangle,
-  ellipse,
-  line,
-}
-
 class EditorState extends ChangeNotifier {
   Sprite? _sprite;
   int _currentLayerIndex = 0;
@@ -24,7 +19,18 @@ class EditorState extends ChangeNotifier {
   double _zoom = 1.0;
   double _panX = 0.0;
   double _panY = 0.0;
-  ToolType _activeTool = ToolType.pencil;
+  ToolType _currentTool = ToolType.pencil;
+  Color _currentColor = const Color(0xFF000000);
+  int _renderVersion = 0;
+
+  /// Version counter that increments on every render-affecting change.
+  int get renderVersion => _renderVersion;
+
+  /// Notify listeners and increment render version.
+  void _notifyRenderChange() {
+    _renderVersion++;
+    notifyListeners();
+  }
 
   /// The active sprite document.
   Sprite? get sprite => _sprite;
@@ -44,16 +50,6 @@ class EditorState extends ChangeNotifier {
   /// Vertical pan offset.
   double get panY => _panY;
 
-  /// Currently active tool.
-  ToolType get activeTool => _activeTool;
-
-  /// Sets the active tool.
-  void setActiveTool(ToolType tool) {
-    if (_activeTool == tool) return;
-    _activeTool = tool;
-    notifyListeners();
-  }
-
   /// Current layer (if sprite is loaded).
   Layer? get currentLayer {
     if (_sprite == null || _sprite!.layers.isEmpty) return null;
@@ -68,14 +64,27 @@ class EditorState extends ChangeNotifier {
     return _sprite!.frames[_currentFrameIndex];
   }
 
+  /// Gets the current cel's pixel buffer, or null if none exists.
+  PixelBuffer? get currentBuffer {
+    if (_sprite == null) return null;
+    final layer = currentLayer;
+    final frame = currentFrame;
+    if (layer == null || frame == null) return null;
+    return _sprite!.getCel(layer.id, frame.id)?.buffer;
+  }
+
   /// Creates a new sprite with the given dimensions.
   void newSprite(int width, int height) {
     _sprite = Sprite(width: width, height: height);
     _currentLayerIndex = 0;
     _currentFrameIndex = 0;
-    _zoom = 1.0;
+    _zoom = 16.0;  // Start zoomed in so pixels are visible
     _panX = 0.0;
     _panY = 0.0;
+    // Create a cel for the default layer/frame
+    final layer = _sprite!.layers.first;
+    final frame = _sprite!.frames.first;
+    _sprite!.createCel(layer.id, frame.id);
     notifyListeners();
   }
 
@@ -133,15 +142,52 @@ class EditorState extends ChangeNotifier {
     if (_sprite == null) return;
     if (index < 0 || index >= _sprite!.layers.length) return;
     _sprite!.layers[index].visible = !_sprite!.layers[index].visible;
+    _notifyRenderChange();
+  }
+
+  /// Adds a new layer to the sprite below the current layer.
+  void addLayer() {
+    if (_sprite == null) return;
+
+    // Create new layer
+    final id = 'layer_${DateTime.now().microsecondsSinceEpoch}';
+    final newLayer = Layer(
+      id: id,
+      name: 'Layer ${_sprite!.layers.length + 1}',
+    );
+
+    // Insert below current layer (at current index, pushing current up)
+    _sprite!.insertLayer(_currentLayerIndex, newLayer);
+
+    // Create cels for all existing frames
+    for (final frame in _sprite!.frames) {
+      _sprite!.createCel(newLayer.id, frame.id);
+    }
+
+    // Keep selection on the new layer (which is now at _currentLayerIndex)
     notifyListeners();
   }
 
-  /// Adds a new layer to the sprite.
-  void addLayer() {
+  /// Deletes the current layer.
+  void deleteLayer() {
     if (_sprite == null) return;
-    _sprite!.addLayer();
+    if (_sprite!.layers.length <= 1) return; // Keep at least one layer
+
+    final layer = currentLayer;
+    if (layer == null) return;
+    if (layer.locked) return; // Cannot delete a locked layer
+
+    _sprite!.removeLayer(layer.id);
+
+    // Adjust current layer index
+    if (_currentLayerIndex >= _sprite!.layers.length) {
+      _currentLayerIndex = _sprite!.layers.length - 1;
+    }
     notifyListeners();
   }
+
+  /// Alias for deleteLayer for compatibility.
+  void deleteCurrentLayer() => deleteLayer();
 
   /// Toggles lock state of a layer by index.
   void toggleLayerLock(int index) {
@@ -156,29 +202,29 @@ class EditorState extends ChangeNotifier {
     if (_sprite == null) return;
     if (index < 0 || index >= _sprite!.layers.length) return;
     _sprite!.layers[index].opacity = opacity.clamp(0.0, 1.0);
-    notifyListeners();
+    _notifyRenderChange();
   }
 
   /// Sets the blend mode of a layer by index.
-  void setLayerBlendMode(int index, LayerBlendMode mode) {
+  void setLayerBlendMode(int index, doc.BlendMode mode) {
     if (_sprite == null) return;
     if (index < 0 || index >= _sprite!.layers.length) return;
     _sprite!.layers[index].blendMode = mode;
-    notifyListeners();
+    _notifyRenderChange();
   }
 
   /// Reorders a layer from oldIndex to newIndex.
   void reorderLayer(int oldIndex, int newIndex) {
     if (_sprite == null) return;
-    final layers = _sprite!.layers;
-    if (oldIndex < 0 || oldIndex >= layers.length) return;
-    if (newIndex < 0 || newIndex >= layers.length) return;
+    final layerCount = _sprite!.layers.length;
+    if (oldIndex < 0 || oldIndex >= layerCount) return;
+    if (newIndex < 0 || newIndex >= layerCount) return;
     if (oldIndex == newIndex) return;
 
-    final layer = layers.removeAt(oldIndex);
-    layers.insert(newIndex, layer);
+    // Use Sprite's moveLayer which handles the internal list
+    _sprite!.moveLayer(oldIndex, newIndex);
 
-    // Update current selection if needed
+    // Update current selection to follow the moved layer
     if (_currentLayerIndex == oldIndex) {
       _currentLayerIndex = newIndex;
     } else if (oldIndex < _currentLayerIndex && newIndex >= _currentLayerIndex) {
@@ -187,7 +233,7 @@ class EditorState extends ChangeNotifier {
       _currentLayerIndex++;
     }
 
-    notifyListeners();
+    _notifyRenderChange();
   }
 
   /// Duplicates the current layer.
@@ -199,28 +245,32 @@ class EditorState extends ChangeNotifier {
 
     final current = _sprite!.layers[_currentLayerIndex];
     final copy = current.copyWith(
-      id: DateTime.now().microsecondsSinceEpoch,
+      id: 'layer_${DateTime.now().microsecondsSinceEpoch}',
       name: '${current.name} copy',
       locked: false,
     );
 
     _sprite!.layers.insert(_currentLayerIndex + 1, copy);
+
+    // Also duplicate cels for all frames
+    for (final frame in _sprite!.frames) {
+      final cel = _sprite!.getCel(current.id, frame.id);
+      if (cel != null) {
+        _sprite!.createCel(copy.id, frame.id);
+        final newCel = _sprite!.getCel(copy.id, frame.id);
+        if (newCel != null) {
+          // Copy pixel data
+          for (int y = 0; y < cel.buffer.height; y++) {
+            for (int x = 0; x < cel.buffer.width; x++) {
+              final rgba = cel.buffer.getPixel(x, y);
+              newCel.buffer.setPixel(x, y, rgba[0], rgba[1], rgba[2], rgba[3]);
+            }
+          }
+        }
+      }
+    }
+
     _currentLayerIndex++;
-    notifyListeners();
-  }
-
-  /// Deletes the current layer.
-  void deleteCurrentLayer() {
-    if (_sprite == null) return;
-    if (_sprite!.layers.length <= 1) return; // Keep at least one layer
-    if (_currentLayerIndex < 0 || _currentLayerIndex >= _sprite!.layers.length) {
-      return;
-    }
-
-    _sprite!.layers.removeAt(_currentLayerIndex);
-    if (_currentLayerIndex >= _sprite!.layers.length) {
-      _currentLayerIndex = _sprite!.layers.length - 1;
-    }
     notifyListeners();
   }
 
@@ -236,5 +286,122 @@ class EditorState extends ChangeNotifier {
     if (_sprite == null) return;
     if (_currentLayerIndex <= 0) return;
     reorderLayer(_currentLayerIndex, _currentLayerIndex - 1);
+  }
+
+  /// Current tool type.
+  ToolType get currentTool => _currentTool;
+
+  /// Sets the current tool.
+  void setTool(ToolType tool) {
+    if (_currentTool != tool) {
+      _currentTool = tool;
+      notifyListeners();
+    }
+  }
+
+  /// Current drawing color.
+  Color get currentColor => _currentColor;
+
+  /// Sets the current color.
+  void setColor(Color color) {
+    if (_currentColor != color) {
+      _currentColor = color;
+      notifyListeners();
+    }
+  }
+
+  /// Whether the current layer is locked.
+  bool get isCurrentLayerLocked => currentLayer?.locked ?? false;
+
+  /// Draws a pixel at (x, y) with the given color.
+  void drawPixel(int x, int y, Color color) {
+    if (isCurrentLayerLocked) return;
+    final buffer = currentBuffer;
+    if (buffer == null) return;
+    if (!buffer.contains(x, y)) return;
+
+    final r = (color.r * 255).round();
+    final g = (color.g * 255).round();
+    final b = (color.b * 255).round();
+    final a = (color.a * 255).round();
+    buffer.setPixel(x, y, r, g, b, a);
+    _notifyRenderChange();
+  }
+
+  /// Draws multiple pixels.
+  void drawPixels(List<({int x, int y, Color color})> pixels) {
+    if (isCurrentLayerLocked) return;
+    final buffer = currentBuffer;
+    if (buffer == null) return;
+
+    for (final p in pixels) {
+      if (buffer.contains(p.x, p.y)) {
+        final r = (p.color.r * 255).round();
+        final g = (p.color.g * 255).round();
+        final b = (p.color.b * 255).round();
+        final a = (p.color.a * 255).round();
+        buffer.setPixel(p.x, p.y, r, g, b, a);
+      }
+    }
+    _notifyRenderChange();
+  }
+
+  /// Clears a pixel (sets to transparent).
+  void clearPixel(int x, int y) {
+    if (isCurrentLayerLocked) return;
+    final buffer = currentBuffer;
+    if (buffer == null) return;
+    if (!buffer.contains(x, y)) return;
+    buffer.setPixel(x, y, 0, 0, 0, 0);
+    _notifyRenderChange();
+  }
+
+  /// Flood fills from (x, y) with the current color.
+  void floodFill(int x, int y) {
+    if (isCurrentLayerLocked) return;
+    final buffer = currentBuffer;
+    if (buffer == null) return;
+    if (!buffer.contains(x, y)) return;
+
+    final targetColor = buffer.getPixelRaw(x, y);
+    final fillColor = _colorToRaw(_currentColor);
+
+    // Don't fill if same color
+    if (targetColor == fillColor) return;
+
+    // Simple scanline flood fill
+    final visited = <int>{};
+    final stack = <int>[y * buffer.width + x];
+
+    while (stack.isNotEmpty) {
+      final pos = stack.removeLast();
+      if (visited.contains(pos)) continue;
+
+      final px = pos % buffer.width;
+      final py = pos ~/ buffer.width;
+
+      if (!buffer.contains(px, py)) continue;
+      if (buffer.getPixelRaw(px, py) != targetColor) continue;
+
+      visited.add(pos);
+      buffer.setPixelRaw(px, py, fillColor);
+
+      // Add neighbors
+      if (px > 0) stack.add(pos - 1);
+      if (px < buffer.width - 1) stack.add(pos + 1);
+      if (py > 0) stack.add(pos - buffer.width);
+      if (py < buffer.height - 1) stack.add(pos + buffer.width);
+    }
+
+    _notifyRenderChange();
+  }
+
+  /// Converts Color to raw RGBA int (RRGGBBAA format).
+  int _colorToRaw(Color c) {
+    final r = (c.r * 255).round();
+    final g = (c.g * 255).round();
+    final b = (c.b * 255).round();
+    final a = (c.a * 255).round();
+    return (r << 24) | (g << 16) | (b << 8) | a;
   }
 }

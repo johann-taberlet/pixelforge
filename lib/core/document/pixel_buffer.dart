@@ -14,6 +14,13 @@ class PixelBuffer {
   /// Raw pixel data in RGBA format (4 bytes per pixel).
   final Uint8List _data;
 
+  /// Version counter that increments on any modification.
+  /// Used by render objects to detect when cache invalidation is needed.
+  int _version = 0;
+
+  /// Current version of the buffer data.
+  int get version => _version;
+
   /// Creates a new pixel buffer with the given dimensions.
   ///
   /// All pixels are initialized to transparent black (0, 0, 0, 0).
@@ -93,6 +100,7 @@ class PixelBuffer {
     _data[offset + 1] = g.clamp(0, 255);
     _data[offset + 2] = b.clamp(0, 255);
     _data[offset + 3] = a.clamp(0, 255);
+    _version++;
   }
 
   /// Sets the RGBA values at (x, y) from a 32-bit integer.
@@ -105,11 +113,13 @@ class PixelBuffer {
     _data[offset + 1] = (rgba >> 16) & 0xFF;
     _data[offset + 2] = (rgba >> 8) & 0xFF;
     _data[offset + 3] = rgba & 0xFF;
+    _version++;
   }
 
   /// Clears the buffer to transparent black.
   void clear() {
     _data.fillRange(0, _data.length, 0);
+    _version++;
   }
 
   /// Fills the buffer with a solid color.
@@ -120,6 +130,7 @@ class PixelBuffer {
       _data[i + 2] = b.clamp(0, 255);
       _data[i + 3] = a.clamp(0, 255);
     }
+    _version++;
   }
 
   void _checkBounds(int x, int y) {

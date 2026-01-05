@@ -102,10 +102,12 @@ class Sprite {
   }
 
   /// Moves a layer from one index to another.
+  /// After this call, the layer will be at toIndex.
   void moveLayer(int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
     final layer = _layers.removeAt(fromIndex);
-    _layers.insert(toIndex > fromIndex ? toIndex - 1 : toIndex, layer);
+    // No adjustment needed - insert directly at target position
+    _layers.insert(toIndex, layer);
   }
 
   // --- Frames ---

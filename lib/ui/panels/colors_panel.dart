@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
-/// Placeholder colors panel with color palette.
+import '../../state/editor_state.dart';
+
+/// Colors panel with color palette and current color display.
 class ColorsPanel extends StatelessWidget {
   const ColorsPanel({super.key});
 
@@ -14,35 +17,49 @@ class ColorsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF252526),
-      padding: const EdgeInsets.all(8),
-      child: Row(
-        children: [
-          // Foreground/background colors
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+    return Consumer<EditorState>(
+      builder: (context, state, _) {
+        return Container(
+          color: const Color(0xFF252526),
+          padding: const EdgeInsets.all(8),
+          child: Row(
             children: [
-              _ColorSwatch(color: Colors.white, size: 28, label: 'FG'),
-              const SizedBox(height: 4),
-              _ColorSwatch(color: Colors.black, size: 28, label: 'BG'),
+              // Current foreground color
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _ColorSwatch(
+                    color: state.currentColor,
+                    size: 28,
+                    label: 'Current',
+                    selected: true,
+                  ),
+                  const SizedBox(height: 4),
+                  _ColorSwatch(color: Colors.black, size: 28, label: 'BG'),
+                ],
+              ),
+              const SizedBox(width: 16),
+              const VerticalDivider(width: 1),
+              const SizedBox(width: 16),
+              // Palette grid
+              Expanded(
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: _palette
+                      .map((c) => _ColorSwatch(
+                            color: c,
+                            size: 24,
+                            selected: c.value == state.currentColor.value,
+                            onTap: () => state.setColor(c),
+                          ))
+                      .toList(),
+                ),
+              ),
             ],
           ),
-          const SizedBox(width: 16),
-          const VerticalDivider(width: 1),
-          const SizedBox(width: 16),
-          // Palette grid
-          Expanded(
-            child: Wrap(
-              spacing: 4,
-              runSpacing: 4,
-              children: _palette
-                  .map((c) => _ColorSwatch(color: c, size: 24))
-                  .toList(),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -51,11 +68,15 @@ class _ColorSwatch extends StatelessWidget {
   final Color color;
   final double size;
   final String? label;
+  final bool selected;
+  final VoidCallback? onTap;
 
   const _ColorSwatch({
     required this.color,
     required this.size,
     this.label,
+    this.selected = false,
+    this.onTap,
   });
 
   @override
@@ -63,15 +84,16 @@ class _ColorSwatch extends StatelessWidget {
     return Tooltip(
       message: label ?? '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
       child: GestureDetector(
-        onTap: () {
-          // TODO: Implement color selection
-        },
+        onTap: onTap,
         child: Container(
           width: size,
           height: size,
           decoration: BoxDecoration(
             color: color,
-            border: Border.all(color: Colors.white24),
+            border: Border.all(
+              color: selected ? Colors.white : Colors.white24,
+              width: selected ? 2 : 1,
+            ),
             borderRadius: BorderRadius.circular(2),
           ),
         ),

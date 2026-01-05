@@ -3,22 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/document/pixel_buffer.dart';
-import '../../input/gesture_coalescer.dart';
-import '../../input/input_controller.dart';
-import '../../rendering/canvas_transform.dart';
-import '../../rendering/canvas_widget.dart';
+import '../../rendering/composite_canvas.dart';
 import '../../state/editor_state.dart';
-import '../../tools/tool.dart';
 
-/// Canvas viewport with pan/zoom, input handling, and GPU-accelerated rendering.
+/// Canvas viewport with pan/zoom and checkerboard background.
 ///
-/// Connects the input system to tools:
-/// 1. Wraps canvas with InputController for pointer event capture
-/// 2. Routes events through GestureCoalescer for frame-synchronized delivery
-/// 3. Transforms screen coordinates to canvas pixel coordinates
-/// 4. Dispatches coalesced events to the active tool
-/// 5. Renders using PixelCanvas for GPU-accelerated display
+/// Supports both web and mobile input:
+/// - Web: Mouse wheel to zoom, middle-click or Space+drag to pan
+/// - Mobile: Pinch to zoom, two-finger pan
 class CanvasViewport extends StatefulWidget {
   const CanvasViewport({super.key});
 
@@ -27,192 +19,199 @@ class CanvasViewport extends StatefulWidget {
 }
 
 class _CanvasViewportState extends State<CanvasViewport> {
-  /// Transform manager for coordinate conversion.
-  final CanvasTransform _transform = CanvasTransform();
-
-  /// Gesture coalescer for frame-synchronized event delivery.
-  late GestureCoalescer _coalescer;
-
-  /// Input controller for pointer event handling.
-  late InputController _inputController;
-
-  /// Whether space key is held (for pan mode).
-  bool _spaceHeld = false;
-
-  /// Focus node for keyboard input.
+  bool _spacePressed = false;
+  bool _isPanning = false;
+  bool _isDrawing = false;
+  double _lastScale = 1.0;
   final FocusNode _focusNode = FocusNode();
-
-  @override
-  void initState() {
-    super.initState();
-    _setupInputPipeline();
-  }
-
-  void _setupInputPipeline() {
-    // Create coalescer that routes events to the active tool
-    _coalescer = GestureCoalescer(
-      onCoalescedStroke: _handleCoalescedStroke,
-      interpolationDensity: 1.0,
-    );
-
-    // Create input controller with coordinate transform
-    _inputController = InputController(
-      transform: _transform,
-      onInput: _coalescer.handleInputEvent,
-    );
-  }
-
-  void _handleCoalescedStroke(
-    int pointerId,
-    List<CoalescedPoint> points,
-    InputEventType eventType,
-  ) {
-    final toolController = context.read<ToolController>();
-
-    // Convert coalesced points to canvas input events and dispatch to tool
-    for (final point in points) {
-      final event = CanvasInputEvent(
-        type: eventType,
-        point: CanvasPoint(
-          x: point.x,
-          y: point.y,
-          pressure: point.pressure,
-          isStylus: point.isStylus,
-        ),
-        pointerId: pointerId,
-        timestamp: point.timestamp,
-      );
-      toolController.handleInput(event);
-    }
-  }
+  final GlobalKey _canvasKey = GlobalKey();
 
   @override
   void dispose() {
     _focusNode.dispose();
-    _transform.dispose();
     super.dispose();
   }
 
-  void _handlePointerSignal(PointerSignalEvent event) {
-    if (event is PointerScrollEvent) {
-      // Scroll wheel zoom
-      final zoomFactor = event.scrollDelta.dy > 0 ? 0.9 : 1.1;
-      _transform.zoomBy(zoomFactor, focalPoint: event.localPosition);
+  /// Convert screen position to canvas pixel coordinates.
+  Offset? _screenToCanvas(Offset screenPos, EditorState state) {
+    final sprite = state.sprite;
+    if (sprite == null) return null;
+
+    final renderBox = _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return null;
+
+    final localPos = renderBox.globalToLocal(screenPos);
+    final size = renderBox.size;
+
+    // Account for centering, pan, and zoom
+    final centerX = size.width / 2 + state.panX;
+    final centerY = size.height / 2 + state.panY;
+    final canvasWidth = sprite.width * state.zoom;
+    final canvasHeight = sprite.height * state.zoom;
+    final canvasLeft = centerX - canvasWidth / 2;
+    final canvasTop = centerY - canvasHeight / 2;
+
+    final canvasX = (localPos.dx - canvasLeft) / state.zoom;
+    final canvasY = (localPos.dy - canvasTop) / state.zoom;
+
+    return Offset(canvasX, canvasY);
+  }
+
+  void _handleToolInput(PointerEvent event, EditorState state) {
+    if (_spacePressed || _isPanning) return;
+
+    final canvasPos = _screenToCanvas(event.position, state);
+    if (canvasPos == null) return;
+
+    final x = canvasPos.dx.floor();
+    final y = canvasPos.dy.floor();
+    final sprite = state.sprite;
+    if (sprite == null) return;
+    if (x < 0 || x >= sprite.width || y < 0 || y >= sprite.height) return;
+
+    switch (state.currentTool) {
+      case ToolType.pencil:
+        state.drawPixel(x, y, state.currentColor);
+      case ToolType.eraser:
+        state.clearPixel(x, y);
+      case ToolType.colorPicker:
+        final buffer = state.currentBuffer;
+        if (buffer != null && buffer.contains(x, y)) {
+          final rgba = buffer.getPixel(x, y);
+          if (rgba[3] > 0) {
+            state.setColor(Color.fromARGB(rgba[3], rgba[0], rgba[1], rgba[2]));
+          }
+        }
+      case ToolType.fill:
+        state.floodFill(x, y);
+      case ToolType.rectangle:
+      case ToolType.ellipse:
+      case ToolType.line:
+        // TODO: Implement shape tools
+        break;
     }
   }
 
-  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+  void _handleKeyEvent(KeyEvent event) {
     if (event.logicalKey == LogicalKeyboardKey.space) {
-      if (event is KeyDownEvent) {
-        setState(() => _spaceHeld = true);
-        return KeyEventResult.handled;
-      } else if (event is KeyUpEvent) {
-        setState(() => _spaceHeld = false);
-        return KeyEventResult.handled;
+      setState(() {
+        _spacePressed = event is KeyDownEvent || event is KeyRepeatEvent;
+      });
+    }
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event, EditorState state) {
+    if (event is PointerScaleEvent) {
+      // Trackpad pinch gesture → zoom
+      state.setZoom(state.zoom * event.scale);
+    } else if (event is PointerScrollEvent) {
+      // Trackpad two-finger scroll = pan, Mouse wheel = zoom
+      final isTrackpad = event.kind == PointerDeviceKind.trackpad;
+
+      if (isTrackpad) {
+        // Trackpad two-finger scroll → pan
+        state.panBy(-event.scrollDelta.dx, -event.scrollDelta.dy);
+      } else {
+        // Mouse wheel → zoom
+        final delta = event.scrollDelta.dy;
+        final zoomFactor = delta > 0 ? 0.9 : 1.1;
+        state.setZoom(state.zoom * zoomFactor);
       }
     }
-    return KeyEventResult.ignored;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Focus(
-      focusNode: _focusNode,
-      onKeyEvent: _handleKeyEvent,
-      autofocus: true,
-      child: Listener(
-        onPointerSignal: _handlePointerSignal,
-        child: Consumer<EditorState>(
-          builder: (context, state, _) {
-            final sprite = state.sprite;
+    return Consumer<EditorState>(
+      builder: (context, state, _) {
+        final sprite = state.sprite;
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                // Update viewport size for transform calculations
-                _transform.setViewportSize(
-                  Size(constraints.maxWidth, constraints.maxHeight),
-                );
-
-                if (sprite != null) {
-                  _transform.setCanvasSize(
-                    Size(sprite.width.toDouble(), sprite.height.toDouble()),
-                  );
-                }
-
-                return GestureDetector(
-                  // Handle pan/zoom gestures (separate from drawing input)
-                  onScaleStart: _onScaleStart,
-                  onScaleUpdate: _onScaleUpdate,
-                  child: MouseRegion(
-                    cursor: _spaceHeld ? SystemMouseCursors.grab : SystemMouseCursors.precise,
-                    child: Container(
-                      color: const Color(0xFF1E1E1E),
-                      child: Center(
-                        child: sprite == null
-                            ? const Text(
-                                'No sprite loaded',
-                                style: TextStyle(color: Colors.white38),
-                              )
-                            : _buildCanvasWithInput(state, sprite),
-                      ),
-                    ),
-                  ),
-                );
+        return KeyboardListener(
+          focusNode: _focusNode,
+          autofocus: true,
+          onKeyEvent: _handleKeyEvent,
+          child: Listener(
+            onPointerSignal: (event) => _handlePointerSignal(event, state),
+            onPointerDown: (event) {
+              _focusNode.requestFocus();
+              // Middle mouse button starts pan
+              if (event.buttons == kMiddleMouseButton) {
+                setState(() => _isPanning = true);
+              } else if (event.buttons == kPrimaryButton && !_spacePressed) {
+                // Primary button starts drawing
+                setState(() => _isDrawing = true);
+                _handleToolInput(event, state);
+              }
+            },
+            onPointerUp: (event) {
+              setState(() {
+                _isPanning = false;
+                _isDrawing = false;
+              });
+            },
+            onPointerMove: (event) {
+              // Pan with middle mouse or space+left click
+              if (_isPanning || (_spacePressed && event.buttons == kPrimaryButton)) {
+                state.panBy(event.delta.dx, event.delta.dy);
+              } else if (_isDrawing && event.buttons == kPrimaryButton) {
+                // Drawing with primary button
+                _handleToolInput(event, state);
+              }
+            },
+            child: GestureDetector(
+              // Mobile: pinch to zoom, two-finger pan
+              onScaleStart: (details) {
+                _lastScale = 1.0;
               },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCanvasWithInput(EditorState state, dynamic sprite) {
-    // Get the current cel's pixel buffer
-    final cel = sprite.getCelAt(state.currentLayerIndex, state.currentFrameIndex);
-
-    // If no cel exists, use empty buffer
-    final buffer = cel?.buffer ?? PixelBuffer(sprite.width as int, sprite.height as int);
-
-    return ListenableBuilder(
-      listenable: _transform,
-      builder: (context, _) {
-        return Transform(
-          transform: _transform.matrix,
-          alignment: Alignment.topLeft,
-          child: _inputController.buildInputLayer(
-            child: PixelCanvas(
-              buffer: buffer,
-              showCheckerboard: true,
-              checkerboardSize: 8,
+              onScaleUpdate: (details) {
+                // Pinch zoom
+                if (details.scale != 1.0) {
+                  final scaleDelta = details.scale / _lastScale;
+                  state.setZoom(state.zoom * scaleDelta);
+                  _lastScale = details.scale;
+                }
+                // Two-finger pan (when not zooming)
+                if (details.pointerCount >= 2 || _spacePressed) {
+                  state.panBy(details.focalPointDelta.dx, details.focalPointDelta.dy);
+                }
+              },
+              child: MouseRegion(
+                cursor: _spacePressed || _isPanning
+                    ? SystemMouseCursors.grab
+                    : SystemMouseCursors.basic,
+                child: Container(
+                  key: _canvasKey,
+                  color: const Color(0xFF1E1E1E),
+                  child: Center(
+                    child: (sprite == null || state.currentFrame == null)
+                        ? const Text(
+                            'No sprite loaded',
+                            style: TextStyle(color: Colors.white38),
+                          )
+                        : Transform(
+                            transform: Matrix4.identity()
+                              ..translate(state.panX, state.panY)
+                              ..scale(state.zoom, state.zoom),
+                            alignment: Alignment.center,
+                            child: RepaintBoundary(
+                              child: SizedBox(
+                                width: sprite.width.toDouble(),
+                                height: sprite.height.toDouble(),
+                                child: CompositeCanvas(
+                                  sprite: sprite,
+                                  frame: state.currentFrame!,
+                                  version: state.renderVersion,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
+                ),
+              ),
             ),
           ),
         );
       },
     );
-  }
-
-  // Track focal point for pan gestures
-  Offset? _lastFocalPoint;
-
-  void _onScaleStart(ScaleStartDetails details) {
-    _lastFocalPoint = details.localFocalPoint;
-  }
-
-  void _onScaleUpdate(ScaleUpdateDetails details) {
-    // Allow pan with single pointer when space is held, or with 2+ pointers
-    final allowPan = _spaceHeld || details.pointerCount >= 2;
-
-    if (!allowPan && details.pointerCount < 2) return;
-
-    if (details.scale != 1.0 && details.pointerCount >= 2) {
-      // Zoom with pinch gesture
-      _transform.zoomBy(details.scale, focalPoint: details.localFocalPoint);
-    } else if (_lastFocalPoint != null) {
-      // Pan
-      final delta = details.localFocalPoint - _lastFocalPoint!;
-      _transform.panBy(delta);
-    }
-
-    _lastFocalPoint = details.localFocalPoint;
   }
 }
