@@ -68,16 +68,14 @@ class Sprite {
   }
 
   /// Gets the index of a layer by ID, or -1 if not found.
-  int getLayerIndex(int id) => _layers.indexWhere((l) => l.id == id);
+  int getLayerIndex(String id) => _layers.indexWhere((l) => l.id == id);
 
   /// Adds a new layer at the top of the stack.
   Layer addLayer({String? name}) {
-    final id = _generateLayerId();
+    final id = _generateId();
     final layer = Layer(
       id: id,
       name: name ?? 'Layer ${_layers.length + 1}',
-      width: width,
-      height: height,
     );
     _layers.add(layer);
     return layer;
@@ -89,24 +87,22 @@ class Sprite {
   }
 
   /// Removes a layer and all its cels.
-  bool removeLayer(int id) {
+  bool removeLayer(String id) {
     final index = getLayerIndex(id);
     if (index == -1) return false;
 
     _layers.removeAt(index);
 
     // Remove all cels for this layer
-    final layerIdStr = id.toString();
-    _cels.removeWhere((key, cel) => cel.layerId == layerIdStr);
+    _cels.removeWhere((key, cel) => cel.layerId == id);
     return true;
   }
 
   /// Moves a layer from one index to another.
-  /// After this call, the layer will be at toIndex.
+  /// After this operation, the layer will be at toIndex.
   void moveLayer(int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
     final layer = _layers.removeAt(fromIndex);
-    // No adjustment needed - insert directly at target position
     _layers.insert(toIndex, layer);
   }
 
@@ -135,7 +131,7 @@ class Sprite {
 
   /// Adds a new frame at the end.
   Frame addFrame({int? durationMs}) {
-    final id = _generateFrameId();
+    final id = _generateId();
     final frame = Frame(
       id: id,
       durationMs: durationMs ?? defaultFrameDurationMs,
@@ -162,10 +158,11 @@ class Sprite {
   }
 
   /// Moves a frame from one index to another.
+  /// After this operation, the frame will be at toIndex.
   void moveFrame(int fromIndex, int toIndex) {
     if (fromIndex == toIndex) return;
     final frame = _frames.removeAt(fromIndex);
-    _frames.insert(toIndex > fromIndex ? toIndex - 1 : toIndex, frame);
+    _frames.insert(toIndex, frame);
   }
 
   /// Total duration of the animation in milliseconds.
@@ -184,7 +181,7 @@ class Sprite {
   Cel? getCelAt(int layerIndex, int frameIndex) {
     if (layerIndex < 0 || layerIndex >= _layers.length) return null;
     if (frameIndex < 0 || frameIndex >= _frames.length) return null;
-    return getCel(_layers[layerIndex].id.toString(), _frames[frameIndex].id);
+    return getCel(_layers[layerIndex].id, _frames[frameIndex].id);
   }
 
   /// Sets a cel at the layer/frame intersection.
@@ -228,11 +225,7 @@ class Sprite {
 
   int _idCounter = 0;
 
-  int _generateLayerId() {
-    return _idCounter++;
-  }
-
-  String _generateFrameId() {
+  String _generateId() {
     return '${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
   }
 
